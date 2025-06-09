@@ -11,8 +11,7 @@ import java.util.*;
 
 public class AssignmentStrategy implements IssueAssignmentStrategy {
 
-    // A simple Map to track the last used index for each issue type for round-robin.
-    // We can use a simple Integer because the calling service is synchronized.
+    // Map that stores the last assigned index against each ISSUE TYPE
     private final Map<IssueType, Integer> lastAssignedIndex = new HashMap<>();
 
     /**
@@ -22,8 +21,7 @@ public class AssignmentStrategy implements IssueAssignmentStrategy {
     @Override
     public Optional<Agent> findAndAssignAgent(Issue issue, Map<String, Agent> allAgents, Map<IssueType, Queue<String>> waitingIssuesMap) {
 
-        // --- Step 1: Find all suitable agents who are free ---
-        // Instead of using Java Streams, we use a simple for loop.
+        // --- Step 1: Finding a list of all suitable agents who are free and whose expertise includes the current ISSUE TYPE ---
         List<Agent> suitableAgents = new ArrayList<>();
         for (Agent agent : allAgents.values()) {
             if (agent.getStatus() == AgentStatus.FREE && agent.canHandle(issue.getType())) {
@@ -31,28 +29,34 @@ public class AssignmentStrategy implements IssueAssignmentStrategy {
             }
         }
 
-        // --- Step 2: Check if any suitable agent was found ---
+        // If no suitable or no free agent is available, we would add the issue in the waiting queue for that specific ISSUE TYPE
         if (suitableAgents.isEmpty()) {
             // No free agent found, so add the issue to the waiting queue.
             System.out.println("No free agent available for " + issue.getType() + ". Adding " + issue.getId() + " to waitlist.");
 
-            // Get the queue for this issue type, creating it if it doesn't exist.
+            // Fetching the waiting queue for this issue type, if it doesn't exist, then creating a new one and adding it in the waitingIssueMap
             Queue<String> queue = waitingIssuesMap.get(issue.getType());
             if (queue == null) {
                 queue = new LinkedList<>(); // Using a simple LinkedList for the queue
                 waitingIssuesMap.put(issue.getType(), queue);
             }
+            //Adding the current issue in the queue
             queue.add(issue.getId());
             issue.setStatus(IssueStatus.WAITING);
 
             return Optional.empty(); // Return empty to signal no agent was assigned.
         }
 
-        // --- Step 3: If agents are available, pick one using Round-Robin ---
-        // Get the last index we used for this issue type. Default to -1 if never used.
+        // --- Step 3 : Now, if there are agents available, 
+        //we would find a suitable index position from the suitableAgents list, to whom we can assign the issue by the round-robin principle
+
+        
+        // For that we would first fetch the index to which issues of this given issueType was previously assigned to 
         int lastIndex = lastAssignedIndex.getOrDefault(issue.getType(), -1);
 
-        // Find the next index, wrapping around if we reach the end of the list.
+        // Find the next index by incrementing the previously used by 1 
+        //and if the new Index comes out to be greater than the size of the list of suitable Agents,
+        //we would just make the index position to circle back to the start of the list
         int nextIndex = (lastIndex + 1) % suitableAgents.size();
 
         // Get the agent to assign.
@@ -69,30 +73,32 @@ public class AssignmentStrategy implements IssueAssignmentStrategy {
     }
 
     /**
+     * this is called when agent who is free and an issue from the waiting queue is to be assigned to him/her
      * Called when an agent becomes free. Checks the waiting list for any work
-     * the agent can do.
      */
     @Override
     public Optional<Issue> assignWaitingIssueToAgent(Agent agent, Map<String, Issue> allIssues, Map<IssueType, Queue<String>> waitingIssuesMap) {
 
-        // --- Step 1: Loop through the agent's areas of expertise ---
+        // --- Step 1: Iterating through the given agent's list of expertise
         for (IssueType expertiseType : agent.getExpertiseTypes()) {
+            //Fetching the waiting queue for this IssueType
             Queue<String> waitingQueue = waitingIssuesMap.get(expertiseType);
 
-            // --- Step 2: Check if there's a waiting queue for this expertise and if it's not empty ---
+            // --- Step 2: Making sure that there exists a waiting queue for this IssueType and it is not empty
             if (waitingQueue != null && !waitingQueue.isEmpty()) {
 
-                // --- Step 3: Get the ID of the issue at the front of the queue ---
-                // .poll() gets and REMOVES the first item. If queue is empty, it returns null.
+                // --- Step 3: fetching the out the issueId that exists at the very front of the queue, 
+                //so that issues are assigned in the order they came in
                 String issueId = waitingQueue.poll();
 
+                //Just a validation for issueId
                 if (issueId != null) {
                     Issue waitingIssue = allIssues.get(issueId);
 
-                    // --- Step 4: Double-check that the issue is still valid to be assigned ---
+                    // --- Step 4: Double-check that the issue is still valid to be assigned by checking if it is in WAITING status or not
                     if (waitingIssue != null && waitingIssue.getStatus() == IssueStatus.WAITING) {
 
-                        // --- Step 5: Assign the issue ---
+                        // --- Step 5: Assign the issue to this agent---
                         agent.assignIssue(waitingIssue.getId());
                         waitingIssue.assignAgent(agent.getAgentId());
 
